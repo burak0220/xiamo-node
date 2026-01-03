@@ -1,56 +1,54 @@
 import hashlib
 from flask import Flask, jsonify, request
-import time
 import os
 
 app = Flask(__name__)
 
-# Chain Data structure
+# XIAMO V2 CUSTOM ALGORITHM
+def xiamo_algorithm(content, nonce):
+    # Sequential hashing to prevent server parallelism
+    layer = f"{content}{nonce}"
+    for i in range(3):
+        # Adding unique 'xiamo_v2' salt to distinguish from standard SHA256
+        layer = hashlib.sha256(f"{layer}{i}xiamo_v2".encode()).hexdigest()
+    return layer
+
 blockchain = {
-    "main_chain": [{"hash": "0000xiamo_genesis_block", "index": 0}],
+    "main_chain": [{"hash": "0000_xiamo_genesis", "index": 0}],
     "strand_A": [],
     "strand_B": []
 }
 
-@app.route('/get_status', methods=['GET'])
-def get_status():
-    return jsonify(blockchain)
-
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
-    b_type = data.get('type') 
+    # Reconstruct content for verification
+    content = f"{data['prev_data']}{data['timestamp']}{data['address']}"
     
-    # 1. Basic Difficulty Check
-    if not data['hash'].startswith("0000"):
-        return jsonify({"status": "error", "msg": "Invalid difficulty"}), 400
-
-    # 2. Side Strand Logic (Must be unique)
-    if b_type.startswith('side'):
-        strand = "strand_A" if 'a' in b_type else "strand_B"
-        if len(blockchain[strand]) < 2:
-            # Check if this hash is already in the strand to prevent duplicates
+    # Verification using the custom Xiamo algorithm
+    check_hash = xiamo_algorithm(content, data['nonce'])
+    
+    if check_hash == data['hash'] and data['hash'].startswith("0000"):
+        b_type = data.get('type')
+        
+        if b_type == 'main':
+            blockchain["main_chain"].append(data)
+            # Clear strands after a successful merge
+            blockchain["strand_A"], blockchain["strand_B"] = [], []
+            return jsonify({"status": "success", "msg": "MAIN BLOCK SECURED"}), 200
+        else:
+            strand = "strand_A" if 'a' in str(b_type) else "strand_B"
             if data['hash'] not in blockchain[strand]:
                 blockchain[strand].append(data['hash'])
-                return jsonify({"status": "success", "msg": f"{strand} updated"})
-    
-    # 3. Main Block Logic (Mathematical Mixer)
-    elif b_type == 'main':
-        a_hashes = blockchain["strand_A"]
-        b_hashes = blockchain["strand_B"]
-        
-        if len(a_hashes) + len(b_hashes) == 4:
-            # Mixer Formula: All Side Hashes + Timestamp + Nonce + Address
-            mixer_input = f"{''.join(a_hashes)}{''.join(b_hashes)}{data['timestamp']}{data['nonce']}{data['address']}"
-            check_hash = hashlib.sha256(mixer_input.encode()).hexdigest()
+                return jsonify({"status": "success", "msg": "Side block added"}), 200
             
-            if check_hash == data['hash']:
-                blockchain["main_chain"].append(data)
-                blockchain["strand_A"], blockchain["strand_B"] = [], [] # Reset strands
-                return jsonify({"status": "success", "msg": "MAIN BLOCK SECURED"})
-    
-    return jsonify({"status": "wait", "msg": "Conditions not met"})
+    return jsonify({"status": "error", "msg": "Math Proof Failed"}), 400
+
+@app.route('/get_status')
+def get_status():
+    return jsonify(blockchain)
 
 if __name__ == "__main__":
+    # Ensure it works on Render's dynamic port
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
