@@ -4,13 +4,17 @@ import os
 
 app = Flask(__name__)
 
-# XIAMO V2 CUSTOM ALGORITHM
-def xiamo_algorithm(content, nonce):
-    # Sequential hashing to prevent server parallelism
-    layer = f"{content}{nonce}"
+# XIAMO ARM-ONLY ALGORITHM (ENGLISH VERSION)
+def xiamo_arm_verify(content, nonce, arch_signature):
+    # Reject immediately if architecture is not ARM-based
+    if "arm" not in arch_signature.lower() and "aarch" not in arch_signature.lower():
+        return "invalid_arch"
+        
+    # Salt the hash with the hardware architecture string
+    layer = f"{content}{nonce}{arch_signature}"
     for i in range(3):
-        # Adding unique 'xiamo_v2' salt to distinguish from standard SHA256
-        layer = hashlib.sha256(f"{layer}{i}xiamo_v2".encode()).hexdigest()
+        layer = hashlib.sha256(f"{layer}{i}xiamo_v2_mobile_power").encode()
+        layer = hashlib.sha256(layer).hexdigest()
     return layer
 
 blockchain = {
@@ -22,18 +26,15 @@ blockchain = {
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
-    # Reconstruct content for verification
     content = f"{data['prev_data']}{data['timestamp']}{data['address']}"
     
-    # Verification using the custom Xiamo algorithm
-    check_hash = xiamo_algorithm(content, data['nonce'])
+    # Verify using the ARM-locked algorithm
+    result_hash = xiamo_arm_verify(content, data['nonce'], data.get('arch', 'unknown'))
     
-    if check_hash == data['hash'] and data['hash'].startswith("0000"):
+    if result_hash == data['hash'] and data['hash'].startswith("0000"):
         b_type = data.get('type')
-        
         if b_type == 'main':
             blockchain["main_chain"].append(data)
-            # Clear strands after a successful merge
             blockchain["strand_A"], blockchain["strand_B"] = [], []
             return jsonify({"status": "success", "msg": "MAIN BLOCK SECURED"}), 200
         else:
@@ -42,13 +43,12 @@ def register():
                 blockchain[strand].append(data['hash'])
                 return jsonify({"status": "success", "msg": "Side block added"}), 200
             
-    return jsonify({"status": "error", "msg": "Math Proof Failed"}), 400
+    return jsonify({"status": "error", "msg": "ARM Proof of Work Failed"}), 400
 
 @app.route('/get_status')
 def get_status():
     return jsonify(blockchain)
 
 if __name__ == "__main__":
-    # Ensure it works on Render's dynamic port
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
