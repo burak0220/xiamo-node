@@ -1,57 +1,55 @@
-from flask import Flask, jsonify, request, render_template_string
+import hashlib
+from flask import Flask, jsonify, request
 import time
 import os
 
 app = Flask(__name__)
-# Kazılan blokları hafızada tutan liste
-mined_blocks = []
 
-# Görsel Arayüz (HTML)
-HTML_TEMPLATE = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Xiamo Network Explorer</title>
-    <meta http-equiv="refresh" content="10"> <style>
-        body { font-family: sans-serif; background: #1a1a1a; color: white; text-align: center; }
-        .container { max-width: 600px; margin: auto; padding: 20px; }
-        .block-card { background: #333; margin: 10px; padding: 15px; border-radius: 10px; border-left: 5px solid #4CAF50; }
-        .address { color: #4CAF50; font-size: 0.8em; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>⛏️ Xiamo Global Explorer</h1>
-        <p>Ağ Durumu: <span style="color: #4CAF50;">Çevrimiçi</span></p>
-        <hr>
-        <h3>Son Kazılan Bloklar</h3>
-        {% for block in blocks[::-1] %}
-        <div class="block-card">
-            <strong>Blok Sahibi:</strong> <br>
-            <span class="address">{{ block.address }}</span> <br>
-            <small>Zaman: {{ block.time }}</small>
-        </div>
-        {% endfor %}
-    </div>
-</body>
-</html>
-'''
+# Chain Data structure
+blockchain = {
+    "main_chain": [{"hash": "0000xiamo_genesis_block", "index": 0}],
+    "strand_A": [],
+    "strand_B": []
+}
 
-@app.route('/')
-def home():
-    return render_template_string(HTML_TEMPLATE, blocks=mined_blocks)
+@app.route('/get_status', methods=['GET'])
+def get_status():
+    return jsonify(blockchain)
 
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
-    if data:
-        # Gelen veriyi listeye ekle
-        data['time'] = time.strftime('%H:%M:%S')
-        mined_blocks.append(data)
-        # Sadece son 10 bloğu tut (hafıza dolmasın diye)
-        if len(mined_blocks) > 10: mined_blocks.pop(0)
-        return jsonify({"success": True})
-    return jsonify({"error": "No data"}), 400
+    b_type = data.get('type') 
+    
+    # 1. Basic Difficulty Check
+    if not data['hash'].startswith("0000"):
+        return jsonify({"status": "error", "msg": "Invalid difficulty"}), 400
+
+    # 2. Side Strand Logic (Must be unique)
+    if b_type.startswith('side'):
+        strand = "strand_A" if 'a' in b_type else "strand_B"
+        if len(blockchain[strand]) < 2:
+            # Check if this hash is already in the strand to prevent duplicates
+            if data['hash'] not in blockchain[strand]:
+                blockchain[strand].append(data['hash'])
+                return jsonify({"status": "success", "msg": f"{strand} updated"})
+    
+    # 3. Main Block Logic (Mathematical Mixer)
+    elif b_type == 'main':
+        a_hashes = blockchain["strand_A"]
+        b_hashes = blockchain["strand_B"]
+        
+        if len(a_hashes) + len(b_hashes) == 4:
+            # Mixer Formula: All Side Hashes + Timestamp + Nonce + Address
+            mixer_input = f"{''.join(a_hashes)}{''.join(b_hashes)}{data['timestamp']}{data['nonce']}{data['address']}"
+            check_hash = hashlib.sha256(mixer_input.encode()).hexdigest()
+            
+            if check_hash == data['hash']:
+                blockchain["main_chain"].append(data)
+                blockchain["strand_A"], blockchain["strand_B"] = [], [] # Reset strands
+                return jsonify({"status": "success", "msg": "MAIN BLOCK SECURED"})
+    
+    return jsonify({"status": "wait", "msg": "Conditions not met"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
