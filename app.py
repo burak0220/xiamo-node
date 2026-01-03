@@ -9,21 +9,34 @@ HALVING_INTERVAL = 210000
 INITIAL_REWARD = 12.5
 DB_FILE = "blockchain_db.json"
 
+# LÜTFEN BURAYA KENDİ CÜZDAN ADRESİNİ YAZ
+FOUNDER_ADDRESS = "XM_48cab684055e214d05421d58" 
+
 def load_db():
     if os.path.exists(DB_FILE):
         try:
-            with open(DB_FILE, "r") as f: return json.load(f)
+            with open(DB_FILE, "r") as f: 
+                return json.load(f)
         except: pass
-    return {"balances": {}, "block_height": 0, "difficulty": 4}
+    
+    # --- GENESIS BLOCK 0 INITIALIZATION ---
+    # Eğer veritabanı yoksa, sistem bu kurucu ayarlarıyla başlar.
+    return {
+        "balances": {
+            FOUNDER_ADDRESS: 0.0  # Kurucu adresi sisteme kaydedildi
+        }, 
+        "block_height": 0, 
+        "difficulty": 4
+    }
 
 blockchain_data = load_db()
 
 def save_db():
-    with open(DB_FILE, "w") as f: json.dump(blockchain_data, f)
+    with open(DB_FILE, "w") as f: 
+        json.dump(blockchain_data, f, indent=4)
 
 # --- THE GHOST-HASH (QUBIC + BLAKE3 HYBRID) ---
 def ghost_hash(address, nonce):
-    # UTF-8 encoding added for global safety
     base = hashlib.blake2b(f"{address}{nonce}".encode('utf-8'), digest_size=32).hexdigest()
     if int(base[-1], 16) % 2 == 0:
         mix = hashlib.sha3_256(base.encode('utf-8')).hexdigest()
@@ -40,7 +53,7 @@ def get_current_reward():
         reward = max(0, MAX_SUPPLY - current_supply)
     return reward
 
-# --- MINING ROUTE (DON'T TOUCH) ---
+# --- MINING ROUTE ---
 @app.route('/mine', methods=['POST'])
 def mine():
     data = request.get_json()
@@ -73,11 +86,12 @@ HTML_TEMPLATE = """
         .label { color: #94a3b8; font-size: 0.75rem; text-transform: uppercase; font-weight: 600; }
         .value { font-size: 1.25rem; font-weight: 700; color: #38bdf8; display: block; margin-top: 4px; }
         h1 { color: #f8fafc; margin: 0; font-size: 1.8rem; }
-        table { width: 100%; border-collapse: collapse; margin-top: 30 stats; background: #0f172a; border-radius: 12px; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; margin-top: 30px; background: #0f172a; border-radius: 12px; overflow: hidden; }
         th, td { padding: 12px 20px; text-align: left; border-bottom: 1px solid #1e293b; }
         th { background: #1e293b; color: #94a3b8; font-size: 0.8rem; }
         .address { font-family: 'Courier New', monospace; color: #fbbf24; font-size: 0.9rem; }
         .status-tag { display: inline-block; background: #065f46; color: #34d399; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; }
+        .founder-tag { background: #1e3a8a; color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; margin-left: 10px; }
     </style>
 </head>
 <body>
@@ -99,7 +113,10 @@ HTML_TEMPLATE = """
             <tbody>
                 {% for addr, bal in rich_list %}
                 <tr>
-                    <td class="address">{{ addr }}</td>
+                    <td class="address">
+                        {{ addr }}
+                        {% if addr == founder %} <span class="founder-tag">FOUNDER</span> {% endif %}
+                    </td>
                     <td><b style="color:#f8fafc">{{ "%.2f"|format(bal) }}</b> XM</td>
                 </tr>
                 {% endfor %}
@@ -117,8 +134,6 @@ def dashboard():
     height = blockchain_data['block_height']
     reward = get_current_reward()
     halving_in = HALVING_INTERVAL - (height % HALVING_INTERVAL)
-    
-    # Sort balances for rich list
     rich_list = sorted(blockchain_data["balances"].items(), key=lambda x: x[1], reverse=True)[:10]
     
     return render_template_string(HTML_TEMPLATE, 
@@ -126,7 +141,8 @@ def dashboard():
                                  height=height, 
                                  reward=reward, 
                                  halving_in=halving_in,
-                                 rich_list=rich_list)
+                                 rich_list=rich_list,
+                                 founder=FOUNDER_ADDRESS)
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=10000)
