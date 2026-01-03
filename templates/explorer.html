@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Xiamo Explorer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { background: #020617; color: #f8fafc; font-family: sans-serif; padding: 20px; }
+        .container { max-width: 900px; margin: auto; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .card { background: #1e293b; padding: 20px; border-radius: 12px; border: 1px solid #334155; }
+        .label { color: #94a3b8; font-size: 12px; text-transform: uppercase; }
+        .value { font-size: 24px; font-weight: bold; display: block; color: #38bdf8; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #334155; }
+        th { color: #38bdf8; }
+        .address { font-family: monospace; color: #fbbf24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Xiamo Network Explorer</h1>
+        <div class="grid">
+            <div class="card"><span class="label">Total Supply</span><span class="value">{{ supply }} / 210M</span></div>
+            <div class="card"><span class="label">Blocks</span><span class="value">#{{ height }}</span></div>
+            <div class="card"><span class="label">Difficulty</span><span class="value">{{ difficulty }}</span></div>
+        </div>
+        <h2>Top Holders</h2>
+        <table>
+            <tr><th>Address</th><th>Balance</th></tr>
+            {% for addr, bal in rich_list %}
+            <tr><td class="address">{{ addr }}</td><td>{{ "%.2f"|format(bal) }} XM</td></tr>
+            {% endfor %}
+        </table>
+    </div>
+</body>
+</html>
