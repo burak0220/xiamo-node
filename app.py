@@ -1,24 +1,34 @@
 import hashlib
+import random
 from flask import Flask, jsonify, request
 import os
 
 app = Flask(__name__)
 
-# XIAMO ARM-ONLY ALGORITHM (ENGLISH VERSION)
-def xiamo_arm_verify(content, nonce, arch_signature):
-    # Reject immediately if architecture is not ARM-based
-    if "arm" not in arch_signature.lower() and "aarch" not in arch_signature.lower():
-        return "invalid_arch"
-        
-    # Salt the hash with the hardware architecture string
-    layer = f"{content}{nonce}{arch_signature}"
-    for i in range(3):
-        layer = hashlib.sha256(f"{layer}{i}xiamo_v2_mobile_power").encode()
-        layer = hashlib.sha256(layer).hexdigest()
-    return layer
+# XIAMO HYBRID ALGORITHM (Qubic + RandomX + Blake2b)
+def xiamo_hybrid_logic(content, nonce):
+    # Step 1: RandomX-Style Execution Path
+    # Deriving a seed from the nonce to create a non-static execution flow
+    seed_val = int(hashlib.blake2b(str(nonce).encode(), digest_size=8).hexdigest(), 16)
+    random.seed(seed_val)
+    
+    # Step 2: Qubic-Style Mathematical Task
+    # Simulating a small computational task that favors CPU/RAM over ASIC
+    mix_value = nonce
+    for _ in range(5):
+        op = random.choice(['xor', 'add', 'shl'])
+        val = random.randint(1, 100)
+        if op == 'xor': mix_value ^= val
+        elif op == 'add': mix_value += val
+        else: mix_value <<= (val % 4)
 
+    # Step 3: Blake2b Final Seal (High-speed parallel hashing)
+    raw_final = f"{content}{mix_value}{nonce}xiamo_v2_final"
+    return hashlib.blake2b(raw_final.encode(), digest_size=32).hexdigest()
+
+# Blockchain Structure: 2 Side Strands + 1 Main Chain
 blockchain = {
-    "main_chain": [{"hash": "0000_xiamo_genesis", "index": 0}],
+    "main_chain": [{"hash": "0000_genesis_block", "index": 0}],
     "strand_A": [],
     "strand_B": []
 }
@@ -28,22 +38,24 @@ def register():
     data = request.json
     content = f"{data['prev_data']}{data['timestamp']}{data['address']}"
     
-    # Verify using the ARM-locked algorithm
-    result_hash = xiamo_arm_verify(content, data['nonce'], data.get('arch', 'unknown'))
-    
-    if result_hash == data['hash'] and data['hash'].startswith("0000"):
-        b_type = data.get('type')
-        if b_type == 'main':
-            blockchain["main_chain"].append(data)
-            blockchain["strand_A"], blockchain["strand_B"] = [], []
-            return jsonify({"status": "success", "msg": "MAIN BLOCK SECURED"}), 200
-        else:
-            strand = "strand_A" if 'a' in str(b_type) else "strand_B"
-            if data['hash'] not in blockchain[strand]:
-                blockchain[strand].append(data['hash'])
-                return jsonify({"status": "success", "msg": "Side block added"}), 200
+    # Verify the proof of work
+    if xiamo_hybrid_logic(content, data['nonce']) == data['hash']:
+        if data['hash'].startswith("0000"):
+            block_type = data.get('type')
             
-    return jsonify({"status": "error", "msg": "ARM Proof of Work Failed"}), 400
+            if block_type == 'main':
+                # Consolidate side strands into the main chain
+                blockchain["main_chain"].append(data)
+                blockchain["strand_A"] = []
+                blockchain["strand_B"] = []
+                return jsonify({"status": "success", "message": "Main Block Secured"}), 200
+            else:
+                # Add to side strands
+                target = "strand_A" if block_type == 'side_a' else "strand_B"
+                blockchain[target].append(data['hash'])
+                return jsonify({"status": "success", "message": f"{target} updated"}), 200
+                
+    return jsonify({"status": "error", "message": "Invalid Proof"}), 400
 
 @app.route('/get_status')
 def get_status():
